@@ -1,5 +1,4 @@
 import pytest
-
 from auditor.engine import validate_url
 
 
@@ -9,23 +8,33 @@ from auditor.engine import validate_url
         "https://example.com",
         "http://example.com/page?id=1",
         "https://sub.example.com:8443/path",
+        "https://example.com/search?q=test#section",
     ],
 )
 def test_accepts_valid_http_urls(url: str) -> None:
-    validate_url(url)
+    # تابع در صورت معتبر بودن نباید هیچ استثنایی برگرداند (None)
+    assert validate_url(url) is None or validate_url(url) == url
 
 
 @pytest.mark.parametrize(
-    "url",
+    ("url", "error_pattern"),
     [
-        "",
-        " example.com ",
-        "example.com",
-        "ftp://example.com",
-        "https://",
-        "https://example.com:invalid",
+        ("", "cannot be empty"),
+        (" example.com ", "invalid"),
+        ("example.com", "missing scheme"),
+        ("ftp://example.com", "unsupported scheme"),
+        ("https://", "missing host"),
+        ("https://example.com:invalid", "invalid port"),
+        ("https://example.com:70000", "port out of range"),
+        ("javascript:alert(1)", "unsupported scheme"),
     ],
 )
-def test_rejects_invalid_urls(url: str) -> None:
-    with pytest.raises(ValueError):
+def test_rejects_invalid_urls(url: str, error_pattern: str) -> None:
+    with pytest.raises(ValueError, match=error_pattern):
         validate_url(url)
+
+
+@pytest.mark.parametrize("invalid_type", [None, 123, []])
+def test_rejects_non_string_types(invalid_type) -> None:
+    with pytest.raises((TypeError, ValueError)):
+        validate_url(invalid_type)
