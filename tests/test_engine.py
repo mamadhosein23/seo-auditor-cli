@@ -12,8 +12,8 @@ from auditor.engine import validate_url
     ],
 )
 def test_accepts_valid_http_urls(url: str) -> None:
-    # تابع در صورت معتبر بودن نباید هیچ استثنایی برگرداند (None)
-    assert validate_url(url) is None or validate_url(url) == url
+    # اگر تابع ورودی را برمی‌گرداند مقدار را با خودش بسنجید؛ اگر چیزی برنمی‌گرداند از assert validate_url(url) is None استفاده کنید
+    assert validate_url(url) == url
 
 
 @pytest.mark.parametrize(
@@ -34,7 +34,7 @@ def test_rejects_invalid_urls(url: str, error_pattern: str) -> None:
         validate_url(url)
 
 
-@pytest.mark.parametrize("invalid_type", [None, 123, []])
-def test_rejects_non_string_types(invalid_type) -> None:
-    with pytest.raises((TypeError, ValueError)):
-        validate_url(invalid_type)
+@pytest.mark.parametrize("invalid_input", [None, 123, [], {}])
+def test_rejects_non_string_types(invalid_input: object) -> None:
+    with pytest.raises(TypeError):
+        validate_url(invalid_input)  # type: ignore[arg-type]
