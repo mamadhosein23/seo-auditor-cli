@@ -11,25 +11,29 @@ console = Console()
 error_console = Console(stderr=True)
 
 
-def _format_lcp(value: float | None) -> str:
+def _format_metric(
+    value: float | None,
+    good_threshold: float,
+    poor_threshold: float,
+    unit: str = " ms",
+    precision: int = 0,
+) -> str:
+    """فرمت‌دهی یکپارچه متریک‌های Web Vitals بر اساس آستانه‌های رسمی گوگل."""
     if value is None:
         return "[dim]—[/dim]"
-    color = "green" if value <= 2500 else "yellow" if value <= 4000 else "red"
-    return f"[{color}]{value:.0f} ms[/{color}]"
+    color = "green" if value <= good_threshold else "yellow" if value <= poor_threshold else "red"
+    return f"[{color}]{value:.{precision}f}{unit}[/{color}]"
 
 
-def _format_cls(value: float | None) -> str:
-    if value is None:
+def _format_status_code(code: int | None) -> str:
+    """رنگ‌آمیزی استاندارد کدهای وضعیت HTTP بر اساس رنج عددی."""
+    if code is None:
         return "[dim]—[/dim]"
-    color = "green" if value <= 0.1 else "yellow" if value <= 0.25 else "red"
-    return f"[{color}]{value:.3f}[/{color}]"
-
-
-def _format_inp(value: float | None) -> str:
-    if value is None:
-        return "[dim]—[/dim]"
-    color = "green" if value <= 200 else "yellow" if value <= 500 else "red"
-    return f"[{color}]{value:.0f} ms[/{color}]"
+    if 200 <= code < 300:
+        return f"[green]{code}[/green]"
+    if 300 <= code < 400:
+        return f"[yellow]{code}[/yellow]"
+    return f"[red]{code}[/red]"
 
 
 def print_report(results: Sequence[AuditResult]) -> None:
@@ -43,33 +47,27 @@ def print_report(results: Sequence[AuditResult]) -> None:
     table.add_column("INP", justify="right")
 
     for result in results:
-        status = (
-            f"[green]{result.status_code}[/green]"
-            if result.status_code and result.status_code < 400
-            else f"[red]{result.status_code or '—'}[/red]"
-        )
         table.add_row(
             result.url,
-            status,
+            _format_status_code(result.status_code),
             result.title or "[dim]—[/dim]",
-            _format_lcp(result.metrics.lcp_ms),
-            _format_cls(result.metrics.cls),
-            _format_inp(result.metrics.inp_ms),
+            _format_metric(result.metrics.lcp_ms, 2500, 4000),
+            _format_metric(result.metrics.cls, 0.1, 0.25, unit="", precision=3),
+            _format_metric(result.metrics.inp_ms, 200, 500),
         )
 
     console.print(table)
 
-    # ارسال خطاها و هشدارها به stderr
+    # نمایش خطاها و هشدارها به تفکیک روی stderr
     for result in results:
         for error in result.errors:
-            error_console.print(f"[bold red]خطا[/bold red] — {result.url}: {error}")
+            error_console.print(f"[bold red]ERROR[/bold red]   — {result.url}: {error}")
         for warning in result.warnings:
-            error_console.print(f"[bold yellow]هشدار[/bold yellow] — {result.url}: {warning}")
+            error_console.print(f"[bold yellow]WARNING[/bold yellow] — {result.url}: {warning}")
 
 
 def save_json(results: Sequence[AuditResult], output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    # سریال‌سازی بهینه و مستقیم به JSON در Pydantic v2 بدون سربار دیکشنری میانی
     adapter = TypeAdapter(list[AuditResult])
     json_bytes = adapter.dump_json(results, indent=2)
     output_path.write_bytes(json_bytes)
