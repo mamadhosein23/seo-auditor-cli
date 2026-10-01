@@ -1,19 +1,19 @@
 # SEO Auditor CLI
 
-ابزار خط فرمان برای بررسی مقدماتی اطلاعات SEO و عملکرد صفحه‌های وب با Chromium و Playwright.
+A CLI tool for preliminary SEO analysis and web performance auditing using Chromium and Playwright.
 
-## امکانات
+## Features
 
-- استخراج عنوان صفحه، توضیحات متا و canonical
-- شمارش headingها و عناصر معنایی HTML
-- استخراج Open Graph و JSON-LD
-- شمارش تصویرهایی که `alt` ندارند
-- اندازه‌گیری تقریبی LCP و CLS در همان بازدید
-- ذخیرهٔ گزارش به‌صورت JSON
-- بررسی چند URL با اجرای هم‌زمان محدودشده
+- Extract page title, meta description, and canonical tags.
+- Count headings and semantic HTML elements.
+- Extract Open Graph and JSON-LD metadata.
+- Count images missing `alt` attributes.
+- Measure approximate LCP and CLS during the visit.
+- Save reports in JSON format.
+- Audit multiple URLs with limited concurrency.
 
-## نصب
+## Installation
 
-Python 3.10 یا بالاتر لازم است.
+Python 3.10 or higher is required.
 ```bash
 python -m venv .venv
