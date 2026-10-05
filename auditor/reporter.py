@@ -10,6 +10,9 @@ from auditor.parser import AuditResult
 console = Console()
 error_console = Console(stderr=True)
 
+# بهینه‌سازی: تعریف آداپتور در سطح ماژول جهت جلوگیری از بازسازی مکرر Schema
+_AUDIT_RESULTS_ADAPTER: TypeAdapter[list[AuditResult]] = TypeAdapter(list[AuditResult])
+
 
 def _format_metric(
     value: float | None,
@@ -47,27 +50,33 @@ def print_report(results: Sequence[AuditResult]) -> None:
     table.add_column("INP", justify="right")
 
     for result in results:
+        # مدیریت خطای None بودن آبجکت metrics در صورت خرابی لود صفحه
+        metrics = getattr(result, "metrics", None)
+        lcp = getattr(metrics, "lcp_ms", None) if metrics else None
+        cls = getattr(metrics, "cls", None) if metrics else None
+        inp = getattr(metrics, "inp_ms", None) if metrics else None
+
         table.add_row(
             result.url,
             _format_status_code(result.status_code),
             result.title or "[dim]—[/dim]",
-            _format_metric(result.metrics.lcp_ms, 2500, 4000),
-            _format_metric(result.metrics.cls, 0.1, 0.25, unit="", precision=3),
-            _format_metric(result.metrics.inp_ms, 200, 500),
+            _format_metric(lcp, 2500, 4000),
+            _format_metric(cls, 0.1, 0.25, unit="", precision=3),
+            _format_metric(inp, 200, 500),
         )
 
     console.print(table)
 
     # نمایش خطاها و هشدارها به تفکیک روی stderr
     for result in results:
-        for error in result.errors:
+        for error in getattr(result, "errors", []):
             error_console.print(f"[bold red]ERROR[/bold red]   — {result.url}: {error}")
-        for warning in result.warnings:
+        for warning in getattr(result, "warnings", []):
             error_console.print(f"[bold yellow]WARNING[/bold yellow] — {result.url}: {warning}")
 
 
 def save_json(results: Sequence[AuditResult], output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    adapter = TypeAdapter(list[AuditResult])
-    json_bytes = adapter.dump_json(results, indent=2)
-    output_path.write_bytes(json_bytes)
+    # استفاده از آداپتور کش‌شده ماژول
+    json_bytes = _AUDIT_RESULTS_ADAPTER.dump_json(list(results), indent=2)
+    output_path.write_bytes(json_bytes + b"\n")
