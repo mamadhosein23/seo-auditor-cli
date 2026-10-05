@@ -1,7 +1,7 @@
 from typing import Any
 
-from pydantic import BaseModel, Field
 from playwright.async_api import Page
+from pydantic import BaseModel, Field
 
 from auditor.metrics import WebMetrics
 
@@ -29,59 +29,74 @@ class AuditResult(BaseModel):
 
 PARSER_SCRIPT = r"""
 () => {
-  const content = (selector) => {
-    const element = document.querySelector(selector);
-    const value = element?.content?.trim();
-    return value || null;
+  const getMeta = (selector) => {
+    const el = document.querySelector(selector);
+    return el ? el.getAttribute("content")?.trim() || null : null;
   };
 
+  // 1. Heading Counts (h1 to h6)
   const headingCounts = {};
   for (let level = 1; level <= 6; level++) {
-    headingCounts[`h${level}`] =
-      document.querySelectorAll(`h${level}`).length;
+    headingCounts[`h${level}`] = document.querySelectorAll(`h${level}`).length;
   }
 
-  const semanticTags = [
-    "main", "nav", "header", "footer",
-    "article", "section", "aside"
-  ];
-
+  // 2. Semantic Elements
+  const semanticTags = ["main", "nav", "header", "footer", "article", "section", "aside"];
   const semanticElements = {};
   for (const tag of semanticTags) {
     semanticElements[tag] = document.querySelectorAll(tag).length;
   }
 
+  // 3. OpenGraph Tags (پشتیبانی از هر دو اتریبیوت استاندارد property و name)
   const openGraph = {};
-  for (const element of document.querySelectorAll('meta[property^="og:"]')) {
-    const key = element.getAttribute("property");
-    const value = element.getAttribute("content")?.trim();
-    if (key && value) openGraph[key] = value;
+  const ogElements = document.querySelectorAll('meta[property^="og:"], meta[name^="og:"]');
+  for (const el of ogElements) {
+    const key = el.getAttribute("property") || el.getAttribute("name");
+    const value = el.getAttribute("content")?.trim();
+    if (key && value) {
+      openGraph[key.toLowerCase()] = value;
+    }
   }
 
+  // 4. Schema.org JSON-LD extraction
   const schemaOrg = [];
   let invalidSchemaCount = 0;
-
-  for (const script of document.querySelectorAll(
-    'script[type="application/ld+json"]'
-  )) {
+  for (const script of document.querySelectorAll('script[type="application/ld+json"]')) {
+    const text = script.textContent?.trim();
+    if (!text) continue;
     try {
-      schemaOrg.push(JSON.parse(script.textContent || ""));
+      schemaOrg.push(JSON.parse(text));
     } catch (_) {
       invalidSchemaCount++;
     }
   }
 
+  // 5. بررسی تصاویر فاقد alt (حذف تگ‌های با alt فاقد متن یا خالی از whitespace)
+  let imagesWithoutAlt = 0;
+  for (const img of document.querySelectorAll("img")) {
+    if (!img.hasAttribute("alt") || img.getAttribute("alt").trim() === "") {
+      imagesWithoutAlt++;
+    }
+  }
+
+  // 6. استخراج Canonical با URL Absolute
+  const canonicalEl = document.querySelector('link[rel="canonical"]');
+  let canonical = null;
+  if (canonicalEl) {
+    canonical = canonicalEl.href || canonicalEl.getAttribute("href") || null;
+  }
+
   return {
-    final_url: location.href,
-    title: document.title.trim() || null,
-    meta_description: content('meta[name="description" i]'),
-    canonical: document.querySelector('link[rel="canonical"]')?.href || null,
-    lang: document.documentElement.lang || null,
+    final_url: window.location.href,
+    title: document.title ? document.title.trim() : null,
+    meta_description: getMeta('meta[name="description" i]'),
+    canonical: canonical,
+    lang: document.documentElement.getAttribute("lang")?.trim() || null,
     heading_counts: headingCounts,
     semantic_elements: semanticElements,
     open_graph: openGraph,
     schema_org: schemaOrg,
-    images_without_alt: document.querySelectorAll("img:not([alt])").length,
+    images_without_alt: imagesWithoutAlt,
     invalid_schema_count: invalidSchemaCount
   };
 }
@@ -92,14 +107,19 @@ async def parse_page(
     page: Page,
     requested_url: str,
     status_code: int | None,
+    metrics: WebMetrics | None = None,
 ) -> AuditResult:
     data = await page.evaluate(PARSER_SCRIPT)
 
-    warnings = []
-    if data["invalid_schema_count"]:
-        warnings.append(
-            f'{data["invalid_schema_count"]} بلوک JSON-LD نامعتبر پیدا شد.'
-        )
+    warnings: list[str] = []
+    if data["invalid_schema_count"] > 0:
+        warnings.append(f"{data['invalid_schema_count']} بلوک JSON-LD نامعتبر پیدا شد.")
+
+    if not data["title"]:
+        warnings.append("تگ <title> در صفحه یافت نشد.")
+
+    if not data["meta_description"]:
+        warnings.append("تگ meta description یافت نشد.")
 
     return AuditResult(
         url=requested_url,
@@ -114,5 +134,6 @@ async def parse_page(
         open_graph=data["open_graph"],
         schema_org=data["schema_org"],
         images_without_alt=data["images_without_alt"],
+        metrics=metrics or WebMetrics(),
         warnings=warnings,
     )
