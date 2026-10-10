@@ -6,21 +6,35 @@ from auditor.metrics import METRICS_INIT_SCRIPT, collect_metrics
 from auditor.parser import AuditResult, parse_page
 
 
-def validate_url(url: str) -> None:
-    """Raise ValueError unless url is a valid HTTP(S) URL."""
+def validate_url(url: str) -> str:
+    """Validate and return the URL. Raise TypeError or ValueError if invalid."""
+    if not isinstance(url, str):
+        raise TypeError(f"URL must be a string, got {type(url).__name__}")
 
-    if not url or url != url.strip():
-        raise ValueError("URL خالی است یا فاصلهٔ ابتدا/انتها دارد.")
+    if not url:
+        raise ValueError("URL cannot be empty")
+
+    if url != url.strip():
+        raise ValueError("URL contains leading or trailing whitespaces")
 
     try:
         parsed = urlsplit(url)
+        # Accessing port triggers parsing; validates numeric conversion
+        port = parsed.port
         hostname = parsed.hostname
-        parsed.port  # بررسی معتبر بودن پورت
     except ValueError as exc:
-        raise ValueError(f"URL نامعتبر است: {exc}") from exc
+        raise ValueError(f"Invalid URL port or structure: {exc}") from exc
 
-    if parsed.scheme not in {"http", "https"} or not hostname:
-        raise ValueError("URL باید کامل و با http:// یا https:// شروع شود.")
+    if parsed.scheme not in {"http", "https"}:
+        raise ValueError(f"Unsupported or missing scheme: '{parsed.scheme}'")
+
+    if not hostname:
+        raise ValueError("Missing host or netloc in URL")
+
+    if port is not None and not (1 <= port <= 65535):
+        raise ValueError(f"URL port out of range: {port}")
+
+    return url
 
 
 async def audit_url(
@@ -29,33 +43,31 @@ async def audit_url(
     timeout_ms: int = 30_000,
     settle_ms: int = 2_000,
 ) -> AuditResult:
-    """Open a URL, inspect its DOM and collect browser performance metrics."""
-
+    """Open a URL, inspect its DOM, and collect browser performance metrics."""
     try:
-        validate_url(url)
-    except ValueError as exc:
+        validated_url = validate_url(url)
+    except (ValueError, TypeError) as exc:
         return AuditResult(url=url, errors=[str(exc)])
 
     context = None
-
     try:
         context = await browser.new_context()
         page = await context.new_page()
         await page.add_init_script(METRICS_INIT_SCRIPT)
 
         response = await page.goto(
-            url,
+            validated_url,
             wait_until="domcontentloaded",
             timeout=timeout_ms,
         )
 
-        # Give browser performance observers a little time to receive entries.
+        # Allow browser performance observers to capture runtime metrics
         if settle_ms > 0:
             await page.wait_for_timeout(settle_ms)
 
         result = await parse_page(
             page=page,
-            requested_url=url,
+            requested_url=validated_url,
             status_code=response.status if response else None,
         )
         result.metrics = await collect_metrics(page)
