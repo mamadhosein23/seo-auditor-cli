@@ -7,6 +7,8 @@ from auditor.metrics import WebMetrics
 
 
 class AuditResult(BaseModel):
+    """Structured output of a single-page SEO + basic performance audit."""
+
     url: str
     final_url: str | None = None
     status_code: int | None = None
@@ -34,20 +36,20 @@ PARSER_SCRIPT = r"""
     return el ? el.getAttribute("content")?.trim() || null : null;
   };
 
-  // 1. Heading Counts (h1 to h6)
+  // 1) Heading counts (H1..H6)
   const headingCounts = {};
   for (let level = 1; level <= 6; level++) {
     headingCounts[`h${level}`] = document.querySelectorAll(`h${level}`).length;
   }
 
-  // 2. Semantic Elements
+  // 2) Semantic elements presence
   const semanticTags = ["main", "nav", "header", "footer", "article", "section", "aside"];
   const semanticElements = {};
   for (const tag of semanticTags) {
     semanticElements[tag] = document.querySelectorAll(tag).length;
   }
 
-  // 3. OpenGraph Tags (پشتیبانی از هر دو اتریبیوت استاندارد property و name)
+  // 3) Open Graph tags (support both `property` and `name`)
   const openGraph = {};
   const ogElements = document.querySelectorAll('meta[property^="og:"], meta[name^="og:"]');
   for (const el of ogElements) {
@@ -58,7 +60,7 @@ PARSER_SCRIPT = r"""
     }
   }
 
-  // 4. Schema.org JSON-LD extraction
+  // 4) Schema.org JSON-LD extraction
   const schemaOrg = [];
   let invalidSchemaCount = 0;
   for (const script of document.querySelectorAll('script[type="application/ld+json"]')) {
@@ -71,15 +73,16 @@ PARSER_SCRIPT = r"""
     }
   }
 
-  // 5. بررسی تصاویر فاقد alt (حذف تگ‌های با alt فاقد متن یا خالی از whitespace)
+  // 5) Count images missing alt, or having an empty/whitespace-only alt
   let imagesWithoutAlt = 0;
   for (const img of document.querySelectorAll("img")) {
-    if (!img.hasAttribute("alt") || img.getAttribute("alt").trim() === "") {
+    const alt = img.getAttribute("alt");
+    if (alt === null || alt.trim() === "") {
       imagesWithoutAlt++;
     }
   }
 
-  // 6. استخراج Canonical با URL Absolute
+  // 6) Extract canonical as an absolute URL (prefer the resolved href)
   const canonicalEl = document.querySelector('link[rel="canonical"]');
   let canonical = null;
   if (canonicalEl) {
@@ -109,17 +112,19 @@ async def parse_page(
     status_code: int | None,
     metrics: WebMetrics | None = None,
 ) -> AuditResult:
+    """Parse on-page SEO signals from the current DOM and return an AuditResult."""
     data = await page.evaluate(PARSER_SCRIPT)
 
     warnings: list[str] = []
+
     if data["invalid_schema_count"] > 0:
-        warnings.append(f"{data['invalid_schema_count']} بلوک JSON-LD نامعتبر پیدا شد.")
+        warnings.append(f"Found {data['invalid_schema_count']} invalid JSON-LD block(s).")
 
     if not data["title"]:
-        warnings.append("تگ <title> در صفحه یافت نشد.")
+        warnings.append("Missing <title> tag.")
 
     if not data["meta_description"]:
-        warnings.append("تگ meta description یافت نشد.")
+        warnings.append("Missing meta description tag.")
 
     return AuditResult(
         url=requested_url,
