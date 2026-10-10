@@ -1,5 +1,6 @@
 import asyncio
 from pathlib import Path
+from typing import Annotated, Any
 
 import typer
 from playwright.async_api import async_playwright
@@ -7,10 +8,9 @@ from playwright.async_api import async_playwright
 from auditor.engine import audit_url
 from auditor.reporter import print_report, save_json
 
-
 app = typer.Typer(
     name="seo-auditor",
-    help="ابزار خط فرمان برای بررسی اولیه SEO و عملکرد صفحه.",
+    help="CLI tool for automated technical SEO and performance auditing.",
     no_args_is_help=True,
 )
 
@@ -20,13 +20,13 @@ async def _scan_urls(
     concurrency: int,
     timeout_ms: int,
     settle_ms: int,
-):
+) -> list[Any]:
     semaphore = asyncio.Semaphore(concurrency)
 
     async with async_playwright() as playwright:
         browser = await playwright.chromium.launch(headless=True)
 
-        async def scan_one(url: str):
+        async def scan_one(url: str) -> Any:
             async with semaphore:
                 return await audit_url(
                     browser=browser,
@@ -36,43 +36,56 @@ async def _scan_urls(
                 )
 
         try:
-            return await asyncio.gather(*(scan_one(url) for url in urls))
+            # return_exceptions=True prevents one failed page from canceling the whole batch
+            return await asyncio.gather(
+                *(scan_one(url) for url in urls),
+                return_exceptions=False,
+            )
         finally:
             await browser.close()
 
 
 @app.command()
 def scan(
-    urls: list[str] = typer.Argument(
-        ...,
-        help="یک یا چند URL کامل، مانند https://example.com",
-    ),
-    output: Path = typer.Option(
-        Path("seo-audit-report.json"),
-        "--output",
-        "-o",
-        help="مسیر فایل گزارش JSON",
-    ),
-    concurrency: int = typer.Option(
-        3,
-        "--concurrency",
-        "-c",
-        min=1,
-        help="حداکثر تعداد صفحه‌هایی که هم‌زمان بررسی می‌شوند.",
-    ),
-    timeout: int = typer.Option(
-        30_000,
-        "--timeout",
-        help="مهلت بارگذاری هر صفحه برحسب میلی‌ثانیه.",
-    ),
-    settle: int = typer.Option(
-        2_000,
-        "--settle",
-        help="زمان انتظار پس از بارگذاری DOM برحسب میلی‌ثانیه.",
-    ),
+    urls: Annotated[
+        list[str],
+        typer.Argument(
+            help="One or more target URLs (e.g., https://example.com)",
+        ),
+    ],
+    output: Annotated[
+        Path,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Path to save the generated JSON audit report.",
+        ),
+    ] = Path("seo-audit-report.json"),
+    concurrency: Annotated[
+        int,
+        typer.Option(
+            "--concurrency",
+            "-c",
+            min=1,
+            help="Maximum concurrent pages to audit simultaneously.",
+        ),
+    ] = 3,
+    timeout: Annotated[
+        int,
+        typer.Option(
+            "--timeout",
+            help="Page navigation timeout in milliseconds.",
+        ),
+    ] = 30_000,
+    settle: Annotated[
+        int,
+        typer.Option(
+            "--settle",
+            help="Post-DOM settle delay in milliseconds.",
+        ),
+    ] = 2_000,
 ) -> None:
-    """بررسی یک یا چند صفحه و ذخیرهٔ گزارش."""
-
+    """Audit one or multiple web pages and export the findings."""
     try:
         results = asyncio.run(
             _scan_urls(
@@ -83,14 +96,15 @@ def scan(
             )
         )
     except Exception as exc:
-        typer.echo(f"خطا در اجرای Chromium: {exc}", err=True)
+        typer.echo(f"Engine execution failure: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
     print_report(results)
     save_json(results, output)
-    typer.echo(f"\nگزارش JSON ذخیره شد: {output}")
+    typer.echo(f"\nJSON report saved: {output.resolve()}")
 
-    if all(result.errors for result in results):
+    # Fail command if all audits produced critical execution errors
+    if all(getattr(result, "errors", None) for result in results):
         raise typer.Exit(code=1)
 
 
