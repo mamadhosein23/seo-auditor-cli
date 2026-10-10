@@ -3,7 +3,7 @@ from playwright.async_api import Page
 
 
 class WebMetrics(BaseModel):
-    """Browser-side performance measurements; not field CWV data."""
+    """Browser-side performance measurements collected in-page (not lab CWV)."""
 
     lcp_ms: float | None = None
     cls: float | None = None
@@ -22,8 +22,10 @@ METRICS_INIT_SCRIPT = r"""
     interactions: {}
   };
 
+  // Expose state on window so Playwright can read it later.
   window.__seoAuditMetrics = state;
 
+  // LCP
   try {
     const observer = new PerformanceObserver((list) => {
       for (const entry of list.getEntries()) {
@@ -33,6 +35,7 @@ METRICS_INIT_SCRIPT = r"""
     observer.observe({ type: "largest-contentful-paint", buffered: true });
   } catch (_) {}
 
+  // CLS (session windowing per web-vitals approach)
   try {
     const observer = new PerformanceObserver((list) => {
       for (const entry of list.getEntries()) {
@@ -58,6 +61,7 @@ METRICS_INIT_SCRIPT = r"""
     observer.observe({ type: "layout-shift", buffered: true });
   } catch (_) {}
 
+  // INP approximation via Event Timing API (interactionId aggregation)
   try {
     const observer = new PerformanceObserver((list) => {
       for (const entry of list.getEntries()) {
@@ -81,37 +85,39 @@ METRICS_INIT_SCRIPT = r"""
 
 
 async def collect_metrics(page: Page) -> WebMetrics:
-    """Read the metrics collected by the init script."""
-
+    """Read metrics collected by the injected init script."""
     data = await page.evaluate(
         """() => {
           const state = window.__seoAuditMetrics;
           if (!state) return null;
 
+          const toFiniteOrNull = (v) =>
+            Number.isFinite(v) ? v : null;
+
           const interactions = Object.values(state.interactions || {})
             .filter((value) => Number.isFinite(value))
             .sort((a, b) => a - b);
 
-          // Approximate p98; with fewer than 50 interactions this is usually
-          // the longest observed interaction.
+          // Approximate p98; with a small sample size this often equals
+          // the longest observed interaction in this session.
           const index = interactions.length
             ? Math.max(0, Math.ceil(interactions.length * 0.98) - 1)
             : -1;
 
           return {
-            lcp_ms: state.lcp,
-            cls: state.cls,
-            inp_ms: index >= 0 ? interactions[index] : null
+            lcp_ms: toFiniteOrNull(state.lcp),
+            cls: toFiniteOrNull(state.cls),
+            inp_ms: index >= 0 ? toFiniteOrNull(interactions[index]) : null
           };
         }"""
     )
 
     if not data:
-        return WebMetrics(notes=["جمع‌آوری شاخص‌ها در صفحه فعال نشد."])
+        return WebMetrics(notes=["In-page metrics collection did not initialize."])
 
     notes = [
-        "INP فقط از تعامل‌های ثبت‌شده در همین بازدید تخمین زده می‌شود؛ "
-        "بدون تعامل، مقدار آن خالی است."
+        "INP is approximated only from interactions observed during this single run; "
+        "if no interactions occur, INP will be null."
     ]
 
     return WebMetrics(
