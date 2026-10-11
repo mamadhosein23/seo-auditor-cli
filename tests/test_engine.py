@@ -1,3 +1,4 @@
+from typing import Any
 import pytest
 from auditor.engine import validate_url
 
@@ -9,34 +10,39 @@ from auditor.engine import validate_url
         "http://example.com/page?id=1",
         "https://sub.example.com:8443/path",
         "https://example.com/search?q=test#section",
+        "https://xn--bcher-kva.example",  # IDN / Punycode
+        "http://[::1]:8080/path",          # IPv6
     ],
 )
 def test_accepts_valid_http_urls(url: str) -> None:
-    # Ensure the function returns the URL as-is or sanitized
     assert validate_url(url) == url
 
 
 @pytest.mark.parametrize(
     ("url", "error_pattern"),
     [
-        ("", r"(?i)empty"),
-        (" example.com ", r"(?i)(invalid|scheme)"),
-        ("example.com", r"(?i)scheme"),
-        ("ftp://example.com", r"(?i)scheme"),
-        ("https://", r"(?i)(host|netloc)"),
-        ("https://example.com:invalid", r"(?i)port"),
-        ("https://example.com:70000", r"(?i)port"),
-        ("javascript:alert(1)", r"(?i)scheme"),
+        ("", r"empty url"),
+        ("   ", r"empty url"),
+        ("example.com", r"invalid scheme"),
+        ("ftp://example.com", r"unsupported scheme"),
+        ("javascript:alert(1)", r"unsupported scheme"),
+        ("https://", r"missing host"),
+        ("https:///", r"missing host"),
+        ("https://example.com:invalid", r"invalid port"),
+        ("https://example.com:70000", r"port out of range"),
+        ("https://:8080", r"missing host"),
     ],
 )
 def test_rejects_invalid_urls(url: str, error_pattern: str) -> None:
-    # Use regex pattern to match error message without tight coupling
-    with pytest.raises(ValueError, match=error_pattern):
+    # پیام خطای دقیق مانع از pass شدن اشتباهی تست توسط استثناهای پیش‌بینی‌نشده می‌شود
+    with pytest.raises(ValueError, match=rf"(?i){error_pattern}"):
         validate_url(url)
 
 
-@pytest.mark.parametrize("invalid_input", [None, 123, [], {}, b"https://example.com"])
-def test_rejects_non_string_types(invalid_input: object) -> None:
-    # Ensure strict type checking for inputs
-    with pytest.raises(TypeError):
-        validate_url(invalid_input)  # type: ignore[arg-type]
+@pytest.mark.parametrize(
+    "invalid_input",
+    [None, 123, 3.14, [], {}, b"https://example.com"],
+)
+def test_rejects_non_string_types(invalid_input: Any) -> None:
+    with pytest.raises(TypeError, match=r"(?i)expected str"):
+        validate_url(invalid_input)
