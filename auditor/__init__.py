@@ -6,10 +6,13 @@ factors, and validate site endpoints.
 
 from importlib.metadata import PackageNotFoundError, version
 
-try:
-    __version__ = version("auditor")
-except PackageNotFoundError:
-    # Fallback to development version if the package is not installed/editable
-    __version__ = "0.1.0.dev0"
+# نام دقیق پکیج در pyproject.toml تحت [project.name]
+DISTRIBUTION_NAME: str = "auditor"
 
-__all__ = ["__version__"]
+try:
+    __version__: str = version(DISTRIBUTION_NAME)
+except PackageNotFoundError:
+    # پکیج در حالت محلی اجرا شده و هنوز install نشده است
+    __version__ = "0.0.0.dev0"
+
+__all__: list[str] = ["__version__"]
