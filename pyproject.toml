@@ -1,24 +1,40 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
+
 [project]
 name = "seo-auditor-cli"
 version = "0.1.0"
 description = "A small SEO and browser-performance auditing CLI"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = [
-    "playwright>=1.40,<2",
-    "typer>=0.12,<1",
-    "rich>=13,<15",
-    "pydantic>=2,<3",
+license = { text = "MIT" }
+authors = [
+    { name = "Mohammad Hossein" }
 ]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Environment :: Console",
+]
+dependencies = [
+    "playwright>=1.40,<2.0",
+    "typer>=0.12,<0.16",
+    "rich>=13.0,<15.0",
+    "pydantic>=2.0,<3.0",
+]
+
 [project.optional-dependencies]
 test = [
-    "pytest>=8",
+    "pytest>=8.0",
 ]
+
 [project.scripts]
 seo-auditor = "auditor.cli:main"
 
 [tool.setuptools.packages.find]
+where = ["."]
 include = ["auditor*"]
+exclude = ["tests*", "docs*"]
