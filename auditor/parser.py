@@ -36,36 +36,56 @@ PARSER_SCRIPT = r"""
     return el ? el.getAttribute("content")?.trim() || null : null;
   };
 
-  // 1) Heading counts (H1..H6)
+  // Heading counts (H1..H6)
   const headingCounts = {};
   for (let level = 1; level <= 6; level++) {
-    headingCounts[`h${level}`] = document.querySelectorAll(`h${level}`).length;
+    headingCounts[`h${level}`] =
+      document.querySelectorAll(`h${level}`).length;
   }
 
-  // 2) Semantic elements presence
-  const semanticTags = ["main", "nav", "header", "footer", "article", "section", "aside"];
+  // Semantic element counts
+  const semanticTags = [
+    "main", "nav", "header", "footer", "article", "section", "aside"
+  ];
   const semanticElements = {};
   for (const tag of semanticTags) {
     semanticElements[tag] = document.querySelectorAll(tag).length;
   }
 
-  // 3) Open Graph tags (support both `property` and `name`)
+  // Open Graph tags
   const openGraph = {};
-  const ogElements = document.querySelectorAll('meta[property^="og:"], meta[name^="og:"]');
+  const ogElements = document.querySelectorAll(
+    'meta[property^="og:" i], meta[name^="og:" i]'
+  );
+
   for (const el of ogElements) {
     const key = el.getAttribute("property") || el.getAttribute("name");
     const value = el.getAttribute("content")?.trim();
+
     if (key && value) {
       openGraph[key.toLowerCase()] = value;
     }
   }
 
-  // 4) Schema.org JSON-LD extraction
+  // JSON-LD blocks; accept case variations and MIME parameters.
   const schemaOrg = [];
   let invalidSchemaCount = 0;
-  for (const script of document.querySelectorAll('script[type="application/ld+json"]')) {
+
+  const jsonLdScripts = [...document.querySelectorAll("script[type]")].filter(
+    (script) => {
+      const mimeType = (script.getAttribute("type") || "")
+        .split(";")[0]
+        .trim()
+        .toLowerCase();
+
+      return mimeType === "application/ld+json";
+    }
+  );
+
+  for (const script of jsonLdScripts) {
     const text = script.textContent?.trim();
     if (!text) continue;
+
     try {
       schemaOrg.push(JSON.parse(text));
     } catch (_) {
@@ -73,27 +93,46 @@ PARSER_SCRIPT = r"""
     }
   }
 
-  // 5) Count images missing alt, or having an empty/whitespace-only alt
+  // An absent alt attribute is different from alt="":
+  // an empty alt can be correct for a decorative image.
   let imagesWithoutAlt = 0;
   for (const img of document.querySelectorAll("img")) {
-    const alt = img.getAttribute("alt");
-    if (alt === null || alt.trim() === "") {
+    if (!img.hasAttribute("alt")) {
       imagesWithoutAlt++;
     }
   }
 
-  // 6) Extract canonical as an absolute URL (prefer the resolved href)
-  const canonicalEl = document.querySelector('link[rel="canonical"]');
+  // Resolve the first canonical URL against the document base URL.
+  // Do not use the reflected .href for an empty attribute: it can resolve
+  // to the current page URL and look like a valid canonical.
+  const canonicalLinks = document.querySelectorAll(
+    'link[rel~="canonical" i]'
+  );
+
   let canonical = null;
-  if (canonicalEl) {
-    canonical = canonicalEl.href || canonicalEl.getAttribute("href") || null;
+  let invalidCanonical = false;
+
+  if (canonicalLinks.length > 0) {
+    const rawHref = canonicalLinks[0].getAttribute("href")?.trim();
+
+    if (rawHref) {
+      try {
+        canonical = new URL(rawHref, document.baseURI).href;
+      } catch (_) {
+        invalidCanonical = true;
+      }
+    } else {
+      invalidCanonical = true;
+    }
   }
 
   return {
     final_url: window.location.href,
-    title: document.title ? document.title.trim() : null,
+    title: document.title?.trim() || null,
     meta_description: getMeta('meta[name="description" i]'),
-    canonical: canonical,
+    canonical,
+    canonical_count: canonicalLinks.length,
+    invalid_canonical: invalidCanonical,
     lang: document.documentElement.getAttribute("lang")?.trim() || null,
     heading_counts: headingCounts,
     semantic_elements: semanticElements,
@@ -115,16 +154,29 @@ async def parse_page(
     """Parse on-page SEO signals from the current DOM and return an AuditResult."""
     data = await page.evaluate(PARSER_SCRIPT)
 
+    if not isinstance(data, dict):
+        raise RuntimeError("Page parser did not return the expected data.")
+
     warnings: list[str] = []
 
     if data["invalid_schema_count"] > 0:
-        warnings.append(f"Found {data['invalid_schema_count']} invalid JSON-LD block(s).")
+        warnings.append(
+            f"Found {data['invalid_schema_count']} invalid JSON-LD block(s)."
+        )
 
     if not data["title"]:
         warnings.append("Missing <title> tag.")
 
     if not data["meta_description"]:
         warnings.append("Missing meta description tag.")
+
+    if data["canonical_count"] > 1:
+        warnings.append(
+            f"Found {data['canonical_count']} canonical link elements."
+        )
+
+    if data["invalid_canonical"]:
+        warnings.append("Canonical link has a missing or invalid href.")
 
     return AuditResult(
         url=requested_url,
@@ -139,6 +191,6 @@ async def parse_page(
         open_graph=data["open_graph"],
         schema_org=data["schema_org"],
         images_without_alt=data["images_without_alt"],
-        metrics=metrics or WebMetrics(),
+        metrics=metrics if metrics is not None else WebMetrics(),
         warnings=warnings,
     )
