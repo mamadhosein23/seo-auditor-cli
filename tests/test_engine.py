@@ -1,5 +1,6 @@
 from typing import Any
 import pytest
+
 from auditor.engine import validate_url
 
 
@@ -21,20 +22,21 @@ def test_accepts_valid_http_urls(url: str) -> None:
 @pytest.mark.parametrize(
     ("url", "error_pattern"),
     [
-        ("", r"empty url"),
-        ("   ", r"empty url"),
-        ("example.com", r"invalid scheme"),
-        ("ftp://example.com", r"unsupported scheme"),
-        ("javascript:alert(1)", r"unsupported scheme"),
+        ("", r"cannot be empty"),
+        ("   ", r"whitespace"),
+        ("https://example.com/foo bar", r"whitespace"),
+        ("example.com", r"unsupported or missing scheme"),
+        ("ftp://example.com", r"unsupported or missing scheme"),
+        ("javascript:alert(1)", r"unsupported or missing scheme"),
         ("https://", r"missing host"),
         ("https:///", r"missing host"),
-        ("https://example.com:invalid", r"invalid port"),
+        ("https://example.com:invalid", r"invalid url port"),
         ("https://example.com:70000", r"port out of range"),
         ("https://:8080", r"missing host"),
     ],
 )
 def test_rejects_invalid_urls(url: str, error_pattern: str) -> None:
-    # پیام خطای دقیق مانع از pass شدن اشتباهی تست توسط استثناهای پیش‌بینی‌نشده می‌شود
+    # Explicit regex matching ensures failure triggers specifically from the expected guard
     with pytest.raises(ValueError, match=rf"(?i){error_pattern}"):
         validate_url(url)
 
@@ -44,5 +46,5 @@ def test_rejects_invalid_urls(url: str, error_pattern: str) -> None:
     [None, 123, 3.14, [], {}, b"https://example.com"],
 )
 def test_rejects_non_string_types(invalid_input: Any) -> None:
-    with pytest.raises(TypeError, match=r"(?i)expected str"):
+    with pytest.raises(TypeError, match=r"(?i)must be a string"):
         validate_url(invalid_input)
