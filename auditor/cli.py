@@ -28,18 +28,22 @@ async def _scan_urls(
 
         async def scan_one(url: str) -> Any:
             async with semaphore:
-                return await audit_url(
-                    browser=browser,
-                    url=url,
-                    timeout_ms=timeout_ms,
-                    settle_ms=settle_ms,
-                )
+                try:
+                    return await audit_url(
+                        browser=browser,
+                        url=url,
+                        timeout_ms=timeout_ms,
+                        settle_ms=settle_ms,
+                    )
+                except Exception as exc:
+                    # Capture unhandled engine exceptions per URL
+                    return exc
 
         try:
-            # return_exceptions=True prevents one failed page from canceling the whole batch
+            # return_exceptions=True ensures a failure on one page doesn't cancel others
             return await asyncio.gather(
                 *(scan_one(url) for url in urls),
-                return_exceptions=False,
+                return_exceptions=True,
             )
         finally:
             await browser.close()
@@ -103,8 +107,9 @@ def scan(
     save_json(results, output)
     typer.echo(f"\nJSON report saved: {output.resolve()}")
 
-    # Fail command if all audits produced critical execution errors
-    if all(getattr(result, "errors", None) for result in results):
+    # Fail command only if results exist and ALL audits failed or raised exceptions
+    is_failed = lambda r: isinstance(r, Exception) or bool(getattr(r, "errors", None))
+    if results and all(is_failed(r) for r in results):
         raise typer.Exit(code=1)
 
 
