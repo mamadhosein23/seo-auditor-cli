@@ -1,6 +1,7 @@
 from urllib.parse import urlsplit
+from typing import Optional
 
-from playwright.async_api import Browser
+from playwright.async_api import Browser, BrowserContext, Page, Error as PlaywrightError
 
 from auditor.metrics import METRICS_INIT_SCRIPT, collect_metrics
 from auditor.parser import AuditResult, parse_page
@@ -14,12 +15,11 @@ def validate_url(url: str) -> str:
     if not url:
         raise ValueError("URL cannot be empty")
 
-    if url != url.strip():
-        raise ValueError("URL contains leading or trailing whitespaces")
+    if any(c.isspace() for c in url):
+        raise ValueError("URL contains whitespace characters")
 
     try:
         parsed = urlsplit(url)
-        # Accessing port triggers parsing; validates numeric conversion
         port = parsed.port
         hostname = parsed.hostname
     except ValueError as exc:
@@ -49,10 +49,17 @@ async def audit_url(
     except (ValueError, TypeError) as exc:
         return AuditResult(url=url, errors=[str(exc)])
 
-    context = None
+    context: Optional[BrowserContext] = None
+    page: Optional[Page] = None
+
     try:
-        context = await browser.new_context()
+        context = await browser.new_context(
+            user_agent="Mozilla/5.0 (compatible; SEOAuditorBot/1.0; +https://example.com/bot)",
+            viewport={"width": 1280, "height": 800},
+        )
         page = await context.new_page()
+        
+        # Inject performance observer scripts before page scripts execute
         await page.add_init_script(METRICS_INIT_SCRIPT)
 
         response = await page.goto(
@@ -61,18 +68,38 @@ async def audit_url(
             timeout=timeout_ms,
         )
 
-        # Allow browser performance observers to capture runtime metrics
+        errors: list[str] = []
+        status_code: Optional[int] = None
+
+        if response is None:
+            errors.append("Navigation succeeded but no HTTP response was received (e.g. data URL or aborted).")
+        else:
+            status_code = response.status
+            if status_code >= 400:
+                errors.append(f"HTTP response error status: {status_code}")
+
+        # Allow layout shifts and paint observers to settle
         if settle_ms > 0:
             await page.wait_for_timeout(settle_ms)
 
         result = await parse_page(
             page=page,
             requested_url=validated_url,
-            status_code=response.status if response else None,
+            status_code=status_code,
         )
+        
+        # Append connection-level errors if any were collected
+        if errors:
+            result.errors.extend(errors)
+
         result.metrics = await collect_metrics(page)
         return result
 
+    except PlaywrightError as exc:
+        return AuditResult(
+            url=url,
+            errors=[f"BrowserError: {exc.message}"],
+        )
     except Exception as exc:
         return AuditResult(
             url=url,
@@ -80,6 +107,11 @@ async def audit_url(
         )
 
     finally:
+        if page is not None:
+            try:
+                await page.close()
+            except Exception:
+                pass
         if context is not None:
             try:
                 await context.close()
