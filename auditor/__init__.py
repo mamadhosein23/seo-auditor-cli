@@ -6,7 +6,6 @@ factors, and validate site endpoints.
 
 from __future__ import annotations
 
-import sys
 from importlib.metadata import PackageNotFoundError, version
 from typing import TYPE_CHECKING
 
@@ -18,10 +17,11 @@ _DISTRIBUTION_NAME: Final[str] = "auditor"
 _FALLBACK_VERSION: Final[str] = "0.0.0.dev0"
 
 try:
-    __version__: Final[str] = version(_DISTRIBUTION_NAME)
+    _installed_version = version(_DISTRIBUTION_NAME)
 except PackageNotFoundError:
-    # Triggered during uninstalled local execution or non-editable developer checkouts
-    __version__ = _FALLBACK_VERSION
+    _installed_version = _FALLBACK_VERSION
+
+__version__: Final[str] = _installed_version
 
 __all__: Final[tuple[str, ...]] = ("__version__",)
 
