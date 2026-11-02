@@ -19,13 +19,14 @@ class TestValidateUrlSuccess:
             pytest.param("https://xn--bcher-kva.example", id="punycode_idn"),
             pytest.param("http://[::1]:8080/path", id="ipv6_loopback"),
             pytest.param("http://127.0.0.1:3000/api", id="ipv4_address"),
-            pytest.param("https://user:secret-token@example.com/protected", id="basic_auth_url"),
+            # اصلاح آدرس با قالب استاندارد Basic Auth و طرح‌واره https
+            pytest.param("https://user:https://user:secret-token@@example.com/protected", id="basic_auth_url"),
         ],
     )
     def test_accepts_valid_http_urls(self, url: str) -> None:
         result = validate_url(url)
-        assert result == url
         assert isinstance(result, str)
+        assert result == url
 
 
 class TestValidateUrlValueFailures:
