@@ -7,10 +7,7 @@ factors, and validate site endpoints.
 from __future__ import annotations
 
 from importlib.metadata import PackageNotFoundError, version
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from typing import Final
+from typing import Final
 
 # Distribution identifier registered in pyproject.toml
 _DISTRIBUTION_NAME: Final[str] = "auditor"
@@ -27,5 +24,6 @@ __all__: Final[tuple[str, ...]] = ("__version__",)
 
 
 def __dir__() -> list[str]:
-    """Expose only public symbols explicitly declared in __all__."""
-    return sorted(__all__)
+    """Expose public symbols declared in __all__ along with standard module attributes."""
+    # تضمین حفظ اتریبیوت‌های سیستمی ماژول برای سازگاری کامل با IDEها و REPL
+    return sorted(set(globals().keys()) | set(__all__))
