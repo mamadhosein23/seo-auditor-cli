@@ -1,6 +1,8 @@
 # tests/test_validator.py
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 from auditor.engine import validate_url
@@ -19,7 +21,7 @@ class TestValidateUrlSuccess:
             pytest.param("https://xn--bcher-kva.example", id="punycode_idn"),
             pytest.param("http://[::1]:8080/path", id="ipv6_loopback"),
             pytest.param("http://127.0.0.1:3000/api", id="ipv4_address"),
-            # اصلاح آدرس با قالب استاندارد Basic Auth و طرح‌واره https
+            # Ensure standard Basic Auth format over HTTPS is accepted
             pytest.param("https://user:https://user:secret-token@@example.com/protected", id="basic_auth_url"),
         ],
     )
@@ -53,3 +55,20 @@ class TestValidateUrlValueFailures:
     def test_rejects_invalid_urls(self, url: str, error_pattern: str) -> None:
         with pytest.raises(ValueError, match=error_pattern):
             validate_url(url)
+
+
+class TestValidateUrlTypeFailures:
+    """Test rejection of non-string inputs with appropriate TypeError."""
+
+    @pytest.mark.parametrize(
+        "invalid_input",
+        [
+            pytest.param(None, id="none_type"),
+            pytest.param(12345, id="integer_type"),
+            pytest.param(b"https://example.com", id="bytes_type"),
+            pytest.param(["https://example.com"], id="list_type"),
+        ],
+    )
+    def test_rejects_non_string_types(self, invalid_input: Any) -> None:
+        with pytest.raises(TypeError, match=r"(?i)must be a string"):
+            validate_url(invalid_input)
