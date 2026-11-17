@@ -9,18 +9,19 @@ from __future__ import annotations
 from importlib.metadata import PackageNotFoundError, version
 from typing import Final
 
-# Must match the distribution name declared in the project metadata.
-_DISTRIBUTION_NAME: Final[str] = "auditor"
-_FALLBACK_VERSION: Final[str] = "0.0.0.dev0"
+# This must match the project distribution name in pyproject.toml.
+_DISTRIBUTION_NAME: Final = "auditor"
+_FALLBACK_VERSION: Final = "0.0.0.dev0"
 
 try:
-    __version__: Final[str] = version(_DISTRIBUTION_NAME)
+    _version = version(_DISTRIBUTION_NAME)
 except PackageNotFoundError:
-    __version__: Final[str] = _FALLBACK_VERSION
+    _version = _FALLBACK_VERSION
 
+__version__: Final[str] = _version
 __all__: Final[tuple[str, ...]] = ("__version__",)
 
-# Standard module attributes exposed for introspection and interactive tools.
+# Standard module attributes recognized by introspection tools.
 _MODULE_ATTRS: Final[frozenset[str]] = frozenset(
     {
         "__annotations__",
@@ -38,5 +39,5 @@ _MODULE_ATTRS: Final[frozenset[str]] = frozenset(
 
 
 def __dir__() -> list[str]:
-    """Return public exports and standard module attributes."""
+    """Return the module's public exports and standard runtime attributes."""
     return sorted(set(__all__) | (_MODULE_ATTRS & globals().keys()))
