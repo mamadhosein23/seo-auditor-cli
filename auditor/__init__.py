@@ -1,7 +1,7 @@
-"""Command-line tools for SEO and web performance auditing.
+"""Command-line interface for SEO and web performance auditing.
 
-Analyze web performance, inspect on-page SEO factors, and validate
-site endpoints.
+Provides tools to analyze web performance, evaluate on-page SEO factors,
+and validate site endpoints.
 """
 
 from __future__ import annotations
@@ -9,27 +9,18 @@ from __future__ import annotations
 from importlib.metadata import PackageNotFoundError, version
 from typing import Final
 
-# The distribution name declared in the project's package metadata.
+# Must match the distribution name declared in the project metadata.
 _DISTRIBUTION_NAME: Final[str] = "auditor"
-
-# Used when the package metadata is unavailable, such as in a source checkout.
 _FALLBACK_VERSION: Final[str] = "0.0.0.dev0"
 
+try:
+    __version__: Final[str] = version(_DISTRIBUTION_NAME)
+except PackageNotFoundError:
+    __version__: Final[str] = _FALLBACK_VERSION
 
-def _get_version() -> str:
-    """Return the installed package version or a development fallback."""
-    try:
-        return version(_DISTRIBUTION_NAME)
-    except PackageNotFoundError:
-        return _FALLBACK_VERSION
-
-
-__version__: Final[str] = _get_version()
-
-# Names intentionally exported by this module.
 __all__: Final[tuple[str, ...]] = ("__version__",)
 
-# Standard module attributes useful to introspection tools and interactive shells.
+# Standard module attributes exposed for introspection and interactive tools.
 _MODULE_ATTRS: Final[frozenset[str]] = frozenset(
     {
         "__annotations__",
@@ -47,6 +38,5 @@ _MODULE_ATTRS: Final[frozenset[str]] = frozenset(
 
 
 def __dir__() -> list[str]:
-    """List public exports and standard attributes currently defined in the module."""
-    available_attrs = _MODULE_ATTRS.intersection(globals())
-    return sorted((*__all__, *available_attrs))
+    """Return public exports and standard module attributes."""
+    return sorted(set(__all__) | (_MODULE_ATTRS & globals().keys()))
