@@ -1,96 +1,59 @@
-"""Command-line interface and library for SEO and web performance auditing.
+"""Public package interface for the Auditor project.
 
-Provides tools to analyze web performance metrics, evaluate on-page SEO
-factors, and validate site endpoints.
+Auditor provides command-line and programmatic tools for analyzing web
+performance, evaluating on-page SEO, and validating website endpoints.
+
+The package version is resolved from the installed distribution metadata.
+When the metadata is unavailable, such as in an unpackaged source checkout,
+a PEP 440-compatible development version is used as a fallback.
 """
 
 from __future__ import annotations
 
-import sys
-from importlib.metadata import PackageNotFoundError, version
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as distribution_version
 from typing import Final
 
-# Distribution name registered in pyproject.toml [project.name]
+# This value must match the `project.name` field in `pyproject.toml`.
 _DISTRIBUTION_NAME: Final[str] = "auditor"
 
-# Fallback version used in local, editable, or non-installed source checkouts
+# PEP 440-compatible version used when distribution metadata is unavailable.
 _FALLBACK_VERSION: Final[str] = "0.0.0.dev0"
 
 
-def _get_version(dist_name: str, fallback: str) -> str:
-    """Retrieve the installed package version safely.
+def _resolve_version(
+    distribution_name: str = _DISTRIBUTION_NAME,
+    fallback: str = _FALLBACK_VERSION,
+) -> str:
+    """Resolve the installed distribution version.
 
-    Parameters
-    ----------
-    dist_name : str
-        The package distribution name as registered in package metadata.
-    fallback : str
-        The fallback version string to return if metadata is unavailable.
+    Args:
+        distribution_name:
+            Distribution name registered in the package metadata.
+        fallback:
+            Version returned when the distribution metadata cannot be found.
 
-    Returns
-    -------
-    str
-        The resolved semantic version string.
+    Returns:
+        The installed distribution version, or the provided fallback.
+
+    Notes:
+        Only ``PackageNotFoundError`` is handled intentionally. Other metadata
+        errors are allowed to propagate because they may indicate a broken
+        installation that should not be silently ignored.
     """
+    if not distribution_name:
+        raise ValueError("Distribution name must not be empty.")
+
+    if not fallback:
+        raise ValueError("Fallback version must not be empty.")
+
     try:
-        return version(dist_name)
+        return distribution_version(distribution_name)
     except PackageNotFoundError:
         return fallback
 
 
-# Public version constant exposed at package root
-__version__: Final[str] = _get_version(_DISTRIBUTION_NAME, _FALLBACK_VERSION)
+__version__: Final[str] = _resolve_version()
 
-# Explicit public API export contract (PEP 484 & typing guidelines)
+# Define the package's supported public API explicitly.
 __all__: Final[tuple[str, ...]] = ("__version__",)
-
-# Standard module-level dunder attributes per PEP 562 and CPython runtime specs
-_MODULE_ATTRS: Final[frozenset[str]] = frozenset(
-    {
-        "__annotations__",
-        "__builtins__",
-        "__cached__",
-        "__doc__",
-        "__file__",
-        "__loader__",
-        "__name__",
-        "__package__",
-        "__path__",
-        "__spec__",
-    }
-)
-
-
-def __dir__() -> list[str]:
-    """Expose explicit public exports merged with standard module dunders.
-
-    Implements PEP 562 dynamic attribute inspection to hide internal helpers
-    and constants from interactive autocompletion and dir() scans.
-
-    Returns
-    -------
-    list[str]
-        Sorted list of exposed attribute names.
-    """
-    current_globals = globals()
-    active_dunders = {attr for attr in _MODULE_ATTRS if attr in current_globals}
-    return sorted(set(__all__) | active_dunders)
-
-
-def __getattr__(name: str) -> object:
-    """Safely catch unexported access and raise a clear AttributeError (PEP 562).
-
-    Parameters
-    ----------
-    name : str
-        The name of the attribute attempted to be accessed.
-
-    Raises
-    ------
-    AttributeError
-        Raised whenever an undefined or private module attribute is requested.
-    """
-    raise AttributeError(
-        f"module {__name__!r} has no attribute {name!r}. "
-        f"Available public exports: {', '.join(__all__)}"
-    )
