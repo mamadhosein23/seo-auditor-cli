@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import pytest
-
 from auditor.engine import ValidationError, validate_url
-
 
 class TestValidateUrlSuccess:
     """Validate RFC 3986 compliant HTTP/S URI patterns across edge cases."""
