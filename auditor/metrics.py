@@ -1,9 +1,15 @@
-from pydantic import BaseModel, Field
+from __future__ import annotations
+
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field
 from playwright.async_api import Page
 
 
 class WebMetrics(BaseModel):
-    """Browser-side performance measurements collected in-page (Core Web Vitals approximation)."""
+    """Approximate browser-side Core Web Vitals measurements."""
+
+    model_config = ConfigDict(extra="forbid")
 
     lcp_ms: float | None = None
     cls: float | None = None
@@ -19,40 +25,45 @@ METRICS_INIT_SCRIPT = r"""
     clsSessionValue: 0,
     clsSessionStart: null,
     clsLastShift: null,
-    interactions: {}
+    interactions: Object.create(null)
   };
 
-  window.__seoAuditMetrics = state;
+  Object.defineProperty(window, "__seoAuditMetrics", {
+    value: state,
+    configurable: false,
+    enumerable: false,
+    writable: false
+  });
 
-  // 1. Largest Contentful Paint (LCP)
-  if (PerformanceObserver.supportedEntryTypes?.includes("largest-contentful-paint")) {
-    try {
-      const observer = new PerformanceObserver((list) => {
-        const entries = list.getEntries();
-        if (entries.length > 0) {
-          // The last observed entry prior to user interaction is the actual LCP
-          const lastEntry = entries[entries.length - 1];
-          state.lcp = lastEntry.renderTime || lastEntry.loadTime || lastEntry.startTime;
-        }
-      });
-      observer.observe({ type: "largest-contentful-paint", buffered: true });
-    } catch (_) {}
-  }
+  const supports = (type) =>
+    PerformanceObserver.supportedEntryTypes?.includes(type) ?? false;
 
-  // 2. Cumulative Layout Shift (CLS) - Official Session Windowing (Max 5s window, 1s gap)
-  if (PerformanceObserver.supportedEntryTypes?.includes("layout-shift")) {
+  // Largest Contentful Paint
+  if (supports("largest-contentful-paint")) {
     try {
       const observer = new PerformanceObserver((list) => {
         for (const entry of list.getEntries()) {
-          // Ignore shifts caused immediately by direct user actions
+          state.lcp = entry.renderTime || entry.loadTime || entry.startTime;
+        }
+      });
+
+      observer.observe({
+        type: "largest-contentful-paint",
+        buffered: true
+      });
+    } catch (_) {
+      // Keep the rest of the metrics available if this observer is unsupported.
+    }
+  }
+
+  // Cumulative Layout Shift using session windows.
+  if (supports("layout-shift")) {
+    try {
+      const observer = new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
           if (entry.hadRecentInput) continue;
 
           const now = entry.startTime;
-
-          // A new session window starts if:
-          // - No shift has occurred yet
-          // - More than 1 second has elapsed since the last shift
-          // - The current window has lasted longer than 5 seconds
           const sessionExpired =
             state.clsSessionStart === null ||
             now - state.clsLastShift > 1000 ||
@@ -69,12 +80,15 @@ METRICS_INIT_SCRIPT = r"""
           state.cls = Math.max(state.cls, state.clsSessionValue);
         }
       });
+
       observer.observe({ type: "layout-shift", buffered: true });
-    } catch (_) {}
+    } catch (_) {
+      // Keep the rest of the metrics available if this observer is unsupported.
+    }
   }
 
-  // 3. Interaction to Next Paint (INP) - Event Timing API
-  if (PerformanceObserver.supportedEntryTypes?.includes("event")) {
+  // Event Timing entries used to approximate Interaction to Next Paint.
+  if (supports("event")) {
     try {
       const observer = new PerformanceObserver((list) => {
         for (const entry of list.getEntries()) {
@@ -87,54 +101,76 @@ METRICS_INIT_SCRIPT = r"""
           );
         }
       });
+
       observer.observe({
         type: "event",
         buffered: true,
         durationThreshold: 16
       });
-    } catch (_) {}
+    } catch (_) {
+      // Keep the rest of the metrics available if this observer is unsupported.
+    }
   }
 })();
 """
 
 
+_COLLECT_METRICS_SCRIPT = r"""
+() => {
+  const state = window.__seoAuditMetrics;
+  if (!state) return null;
+
+  const toFiniteOrNull = (value) =>
+    typeof value === "number" && Number.isFinite(value)
+      ? Math.round(value * 1000) / 1000
+      : null;
+
+  const interactions = Object.values(state.interactions || {})
+    .filter((value) => typeof value === "number" && Number.isFinite(value))
+    .sort((a, b) => a - b);
+
+  // This is an approximation; see the Python-side notes for limitations.
+  let inp = null;
+  if (interactions.length > 0) {
+    const index = Math.max(0, Math.ceil(interactions.length * 0.98) - 1);
+    inp = interactions[index];
+  }
+
+  return {
+    lcp_ms: toFiniteOrNull(state.lcp),
+    cls: toFiniteOrNull(state.cls),
+    inp_ms: toFiniteOrNull(inp),
+    interaction_count: interactions.length
+  };
+}
+"""
+
+
 async def collect_metrics(page: Page) -> WebMetrics:
-    """Read metrics collected by the injected init script."""
-    data = await page.evaluate(
-        """() => {
-          const state = window.__seoAuditMetrics;
-          if (!state) return null;
+    """Read metrics collected by the injected browser-side script."""
+    try:
+        data: Any = await page.evaluate(_COLLECT_METRICS_SCRIPT)
+    except Exception as exc:
+        return WebMetrics(
+            notes=[f"Unable to read in-page metrics: {type(exc).__name__}: {exc}"]
+        )
 
-          const toFiniteOrNull = (v) =>
-            typeof v === "number" && Number.isFinite(v) ? Math.round(v * 1000) / 1000 : null;
-
-          const interactions = Object.values(state.interactions || {})
-            .filter((value) => typeof value === "number" && Number.isFinite(value))
-            .sort((a, b) => a - b);
-
-          // Google definition: p98 interaction duration for sites with many interactions,
-          // or max interaction duration if total count < 50.
-          let inp = null;
-          if (interactions.length > 0) {
-            const index = Math.max(0, Math.ceil(interactions.length * 0.98) - 1);
-            inp = interactions[index];
-          }
-
-          return {
-            lcp_ms: toFiniteOrNull(state.lcp),
-            cls: toFiniteOrNull(state.cls),
-            inp_ms: toFiniteOrNull(inp)
-          };
-        }"""
-    )
-
-    if not data:
-        return WebMetrics(notes=["In-page metrics collection script did not initialize."])
+    if not isinstance(data, dict):
+        return WebMetrics(
+            notes=["In-page metrics collection script did not initialize."]
+        )
 
     notes: list[str] = []
-    if data.get("inp_ms") is None:
+
+    interaction_count = data.get("interaction_count")
+    if not isinstance(interaction_count, int) or interaction_count == 0:
         notes.append(
-            "INP is null because automated crawler runs do not trigger real user input interactions."
+            "INP is unavailable because no qualifying user interactions were observed."
+        )
+    else:
+        notes.append(
+            "INP is an approximation; the standard INP percentile/outlier "
+            "handling is not implemented."
         )
 
     return WebMetrics(
