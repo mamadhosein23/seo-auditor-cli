@@ -1,3 +1,5 @@
+"""Unit tests for the URL validation engine."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -8,7 +10,7 @@ from auditor.engine import validate_url
 
 
 class TestValidateUrlSuccess:
-    """Test valid URLs across protocols, encodings, and network formats."""
+    """Suite for validating correct URL formats."""
 
     @pytest.mark.parametrize(
         "url",
@@ -20,18 +22,16 @@ class TestValidateUrlSuccess:
             pytest.param("https://xn--bcher-kva.example", id="punycode_idn"),
             pytest.param("http://[::1]:8080/path", id="ipv6_loopback"),
             pytest.param("http://127.0.0.1:3000/api", id="ipv4_address"),
-            # Ensure standard Basic Auth format over HTTPS is accepted
             pytest.param("https://user:https://user:secret-token@@example.com/protected", id="basic_auth_url"),
         ],
     )
-    def test_accepts_valid_http_urls(self, url: str) -> None:
-        result = validate_url(url)
-        assert isinstance(result, str)
-        assert result == url
+    def test_accepts_valid_urls(self, url: str) -> None:
+        """Ensure valid URLs are returned unmodified."""
+        assert validate_url(url) == url
 
 
 class TestValidateUrlValueFailures:
-    """Test rejection of malformed or invalid URLs against explicit error patterns."""
+    """Suite for validating error handling of malformed URL strings."""
 
     @pytest.mark.parametrize(
         ("url", "error_pattern"),
@@ -51,13 +51,14 @@ class TestValidateUrlValueFailures:
             pytest.param("https:///", r"(?i)host", id="missing_host_with_slash"),
         ],
     )
-    def test_rejects_invalid_urls(self, url: str, error_pattern: str) -> None:
+    def test_rejects_invalid_url_values(self, url: str, error_pattern: str) -> None:
+        """Ensure malformed strings raise ValueError with descriptive messages."""
         with pytest.raises(ValueError, match=error_pattern):
             validate_url(url)
 
 
 class TestValidateUrlTypeFailures:
-    """Test rejection of non-string inputs with appropriate TypeError."""
+    """Suite for validating type safety and input sanitization."""
 
     @pytest.mark.parametrize(
         "invalid_input",
@@ -69,5 +70,6 @@ class TestValidateUrlTypeFailures:
         ],
     )
     def test_rejects_non_string_types(self, invalid_input: Any) -> None:
+        """Ensure non-string types raise TypeError."""
         with pytest.raises(TypeError, match=r"(?i)must be a string"):
             validate_url(invalid_input)
