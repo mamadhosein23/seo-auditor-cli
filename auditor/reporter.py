@@ -1,27 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Sequence, Iterator
-
-from pydantic import TypeAdapter
-from rich.console import Console
-from rich.markup import escape
-from rich.table import Table
-from rich.panel import Panel
-
-from auditor.parser import AuditResult
-
-console = Console()
-error_console = Console(stderr=True)
-
-# Performance optimization: Module-level TypeAdapter
-_AUDIT_RESULTS_ADAPTER: TypeAdapter[list[AuditResult]] = TypeAdapter(list[AuditResult])
-
-def _format_metric(
-    value: float | None,
-    good_threshold: float,
-    poor_threshold: float,
-    unit: str = " ms",
+from typing import Seq
     precision: int = 0,
 ) -> str:
     """Format Web Vitals using standard Google thresholds."""
