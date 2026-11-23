@@ -5,23 +5,7 @@ from typing import Seq
     precision: int = 0,
 ) -> str:
     """Format Web Vitals using standard Google thresholds."""
-    if value is None:
-        return "[dim]—[/dim]"
-def _iter_normalized(results: Sequence[AuditResult | Exception]) -> Iterator[AuditResult]:
-    """Efficiently normalize results without duplicating memory."""
-    for item in results:
-    table.add_column("LCP", justify="right")
-    table.add_column("CLS", justify="right")
-    table.add_column("INP", justify="right")
-
-    # Iterate through normalized data lazily
-    audit_results = list(_iter_normalized(results))
-    
-    for res in audit_results:
-        metrics = res.metrics
-        table.add_row(
-            escape(res.url),
-            _format_status_code(res.status_code),
+    if value is None:tus_code),
             escape(res.title) if res.title else "[dim]—[/dim]",
             f"[red]{res.images_without_alt}[/red]" if res.images_without_alt > 0 else "[green]0[/green]",
             _format_metric(metrics.lcp_ms, 2500, 4000),
