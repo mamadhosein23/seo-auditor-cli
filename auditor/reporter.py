@@ -10,22 +10,6 @@ from typing import Seq
 def _iter_normalized(results: Sequence[AuditResult | Exception]) -> Iterator[AuditResult]:
     """Efficiently normalize results without duplicating memory."""
     for item in results:
-        if isinstance(item, Exception):
-            yield AuditResult(
-                url="[Unknown Target]",
-                errors=[f"Unhandled exception: {type(item).__name__}: {item}"]
-            )
-        else:
-            yield item
-
-def print_report(results: Sequence[AuditResult | Exception]) -> None:
-    """Render a structured, color-coded report to the console."""
-    table = Table(title="SEO & Performance Audit", header_style="bold cyan", expand=True)
-
-    table.add_column("URL", overflow="fold", ratio=2)
-    table.add_column("HTTP", justify="center")
-    table.add_column("Title", overflow="ellipsis", ratio=1)
-    table.add_column("No-Alt", justify="center")
     table.add_column("LCP", justify="right")
     table.add_column("CLS", justify="right")
     table.add_column("INP", justify="right")
