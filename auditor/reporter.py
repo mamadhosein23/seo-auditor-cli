@@ -7,25 +7,6 @@ from typing import Seq
     """Format Web Vitals using standard Google thresholds."""
     if value is None:
         return "[dim]—[/dim]"
-    
-    # Use color-coded thresholds for immediate visual feedback
-    if value <= good_threshold:
-        color = "green"
-    elif value <= poor_threshold:
-        color = "yellow"
-    else:
-        color = "red"
-        
-    return f"[{color}]{value:.{precision}f}{unit}[/{color}]"
-
-def _format_status_code(code: int | None) -> str:
-    """Colorize HTTP status codes."""
-    if code is None:
-        return "[dim]—[/dim]"
-    
-    color = "green" if 200 <= code < 300 else "yellow" if 300 <= code < 400 else "red"
-    return f"[{color}]{code}[/{color}]"
-
 def _iter_normalized(results: Sequence[AuditResult | Exception]) -> Iterator[AuditResult]:
     """Efficiently normalize results without duplicating memory."""
     for item in results:
